@@ -82,35 +82,59 @@ CRITICAL RULES:
             ];
         }
 
-        // Call Gemini generateContent (using the requested image prefix model)
-        const response = await ai.models.generateContent({
-            model: modelName,
-            contents: contents,
-            // Configure response depending on the modality. Assuming IMAGE modality is supported.
-        });
+        // Call Gemini API depending on model type
+        const isImagen = modelName.includes('imagen');
 
-        // Check if the response returned any inlineData (images)
-        let outputImageBase64 = null;
-        if (response.candidates && response.candidates.length > 0) {
-            const parts = response.candidates[0].content?.parts || [];
-            // Try to find an image part
-            for (const part of parts) {
-                if (part.inlineData) {
-                    outputImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    break;
+        if (isImagen) {
+            console.log(`Calling generateImages for ${modelName}`);
+            const imageResponse = await ai.models.generateImages({
+                model: modelName,
+                prompt: prompt,
+                config: {
+                    aspectRatio: aspectRatio || '1:1',
+                    numberOfImages: 1,
+                    outputMimeType: 'image/jpeg'
+                }
+            });
+
+            if (imageResponse.generatedImages && imageResponse.generatedImages.length > 0) {
+                const img = imageResponse.generatedImages[0].image;
+                if (img && img.imageBytes) {
+                    const outputImageBase64 = `data:image/jpeg;base64,${img.imageBytes}`;
+                    return NextResponse.json({ success: true, image: outputImageBase64 });
                 }
             }
-        }
+            throw new Error("No image data returned from Imagen generation.");
+        } else {
+            console.log(`Calling generateContent for ${modelName}`);
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: contents,
+            });
 
-        // If no image is natively returned via parts, we will just return a placeholder or error for MVP 
-        // because the user's specific API behavior for "gemini-3.1-flash-image-preview" might differ.
-        // If it's pure text output, return the text, but the intention is Image generation.
-        if (!outputImageBase64) {
-            console.log("No image returned. Response text:", response.text);
-            return NextResponse.json({ success: true, text: response.text, fallbackImage: true });
-        }
+            // Check if the response returned any inlineData (images)
+            let outputImageBase64 = null;
+            if (response.candidates && response.candidates.length > 0) {
+                const parts = response.candidates[0].content?.parts || [];
+                // Try to find an image part
+                for (const part of parts) {
+                    if (part.inlineData) {
+                        outputImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                        break;
+                    }
+                }
+            }
 
-        return NextResponse.json({ success: true, image: outputImageBase64 });
+            // If no image is natively returned via parts, we will just return a placeholder or error for MVP 
+            // because the user's specific API behavior for "gemini-3.1-flash-image-preview" might differ.
+            // If it's pure text output, return the text, but the intention is Image generation.
+            if (!outputImageBase64) {
+                console.log("No image returned. Response text:", response.text);
+                return NextResponse.json({ success: true, text: response.text, fallbackImage: true });
+            }
+
+            return NextResponse.json({ success: true, image: outputImageBase64 });
+        }
     } catch (e: unknown) {
         console.error("Gemini Error:", e);
         return NextResponse.json({ success: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });

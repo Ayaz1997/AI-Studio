@@ -181,7 +181,10 @@ export default function RenderStudio() {
                         {/* Generation Mode Tabs */}
                         <div className="flex bg-neutral-900/80 p-1.5 rounded-xl border border-neutral-800 shadow-inner">
                             <button
-                                onClick={() => setGenerationMode('I2I')}
+                                onClick={() => {
+                                    setGenerationMode('I2I');
+                                    if (model.includes('imagen')) setModel('gemini-3.1-flash-image-preview');
+                                }}
                                 className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 ${generationMode === 'I2I' ? 'bg-indigo-600 text-white shadow-md' : 'text-neutral-500 hover:text-white hover:bg-neutral-800'}`}
                             >
                                 <ImageIcon className="w-4 h-4" /> Image to Image
@@ -285,6 +288,40 @@ export default function RenderStudio() {
                                         <div className="text-xs text-neutral-500">Highest quality detail and adherence</div>
                                     </div>
                                 </label>
+
+                                {generationMode === 'T2I' && (
+                                    <>
+                                        <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-all ${model === 'imagen-4.0-generate-001' ? 'border-indigo-500 bg-indigo-500/10' : 'border-neutral-800 bg-black hover:border-neutral-600'}`}>
+                                            <input
+                                                type="radio"
+                                                name="model"
+                                                value="imagen-4.0-generate-001"
+                                                checked={model === 'imagen-4.0-generate-001'}
+                                                onChange={() => setModel('imagen-4.0-generate-001')}
+                                                className="mr-3 accent-indigo-500 w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-medium text-sm">Imagen 4.0</div>
+                                                <div className="text-xs text-neutral-500">Fast, high quality text-to-image</div>
+                                            </div>
+                                        </label>
+
+                                        <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-all ${model === 'imagen-4.0-ultra-generate-001' ? 'border-indigo-500 bg-indigo-500/10' : 'border-neutral-800 bg-black hover:border-neutral-600'}`}>
+                                            <input
+                                                type="radio"
+                                                name="model"
+                                                value="imagen-4.0-ultra-generate-001"
+                                                checked={model === 'imagen-4.0-ultra-generate-001'}
+                                                onChange={() => setModel('imagen-4.0-ultra-generate-001')}
+                                                className="mr-3 accent-indigo-500 w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-medium text-sm">Imagen 4.0 Ultra</div>
+                                                <div className="text-xs text-neutral-500">Highest fidelity text-to-image output</div>
+                                            </div>
+                                        </label>
+                                    </>
+                                )}
                             </div>
                         </div>
 

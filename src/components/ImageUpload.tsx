@@ -67,6 +67,7 @@ export default function ImageUpload({ onImagesSelected, value, multiple = false,
     // Sync external value changes (e.g., from Remix flow)
     useEffect(() => {
         if (value) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setPreviews(value);
         }
     }, [value]);
