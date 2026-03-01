@@ -26,63 +26,115 @@ function parseBase64ToPart(dataUri: string) {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { styleDescriptor, referenceImage, instruction, modelName } = body;
+        const { styleDescriptor, referenceImage, instruction, modelName, aspectRatio } = body;
 
         console.log("Generating with descriptor: " + styleDescriptor);
 
-        if (!styleDescriptor || !referenceImage || !modelName) {
+        if (!styleDescriptor || !modelName) {
             return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
         }
 
         const ai = getAi();
-        const prompt = `You are a strict and precise style transfer system. 
+        let prompt = '';
+        let contents = [];
+
+        if (referenceImage) {
+            // Image-to-Image Mode
+            prompt = `You are a strict and precise style transfer system. 
 You will be provided with a reference image. 
-Your singular goal is to REDRAW the exact subject matter of the reference image perfectly, but execute it entirely in the following artistic style:
+Your singular goal is to REDRAW the exact structural subject matter of the reference image perfectly, but execute it entirely in the following artistic style:
 
 STYLE DEFINITION:
 ${styleDescriptor}
 
 CRITICAL RULES:
-1. DO NOT change the subject of the reference image.
+1. DO NOT change the core subject or structural composition of the reference image. Let the reference image strictly guide your output.
 2. DO NOT add new objects, people, or items that are not in the reference image.
-3. DO NOT hallucinate.
-4. If a custom instruction is provided, follow it carefully: "${instruction || 'None.'}"
+3. DO NOT apply glossy, glass, or 3D effects unless explicitly stated in the style definition.
+4. If the instruction below is "Strictly maintain structural adherence without adding elements.", you must treat the reference image as sacred geometry and only change the textures/colors to match the style.
+5. Apply the precise colors requested in the style definition. Keep the requested Aspect Ratio: ${aspectRatio || '1:1'}.
+6. Custom Instruction: "${instruction || 'Strictly maintain structural adherence without adding elements.'}"
 `;
+            contents = [
+                parseBase64ToPart(referenceImage),
+                { text: prompt }
+            ];
+        } else {
+            // Text-to-Image Mode
+            if (!instruction) {
+                return NextResponse.json({ success: false, error: 'A text prompt is required for Text-to-Image generation.' }, { status: 400 });
+            }
+            prompt = `You are a strict and precise AI image generator.
+Your singular goal is to generate a completely new image from scratch based on the user's prompt, but execute it entirely in the following artistic style:
 
-        const contents = [
-            parseBase64ToPart(referenceImage),
-            { text: prompt }
-        ];
+STYLE DEFINITION:
+${styleDescriptor}
 
-        // Call Gemini generateContent (using the requested image prefix model)
-        const response = await ai.models.generateContent({
-            model: modelName,
-            contents: contents,
-            // Configure response depending on the modality. Assuming IMAGE modality is supported.
-        });
+CRITICAL RULES:
+1. Generate the subject matter described entirely from scratch based on the "User Prompt".
+2. The generated image MUST strictly adhere to the artistic style defined above.
+3. Apply the precise colors requested in the style definition. Keep the requested Aspect Ratio: ${aspectRatio || '1:1'}.
+4. DO NOT apply glossy, glass, or 3D effects unless explicitly stated in the style definition.
+5. User Prompt: "${instruction}"
+`;
+            contents = [
+                { text: prompt }
+            ];
+        }
 
-        // Check if the response returned any inlineData (images)
-        let outputImageBase64 = null;
-        if (response.candidates && response.candidates.length > 0) {
-            const parts = response.candidates[0].content?.parts || [];
-            // Try to find an image part
-            for (const part of parts) {
-                if (part.inlineData) {
-                    outputImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    break;
+        // Call Gemini API depending on model type
+        const isImagen = modelName.includes('imagen');
+
+        if (isImagen) {
+            console.log(`Calling generateImages for ${modelName}`);
+            const imageResponse = await ai.models.generateImages({
+                model: modelName,
+                prompt: prompt,
+                config: {
+                    aspectRatio: aspectRatio || '1:1',
+                    numberOfImages: 1,
+                    outputMimeType: 'image/jpeg'
+                }
+            });
+
+            if (imageResponse.generatedImages && imageResponse.generatedImages.length > 0) {
+                const img = imageResponse.generatedImages[0].image;
+                if (img && img.imageBytes) {
+                    const outputImageBase64 = `data:image/jpeg;base64,${img.imageBytes}`;
+                    return NextResponse.json({ success: true, image: outputImageBase64 });
                 }
             }
-        }
+            throw new Error("No image data returned from Imagen generation.");
+        } else {
+            console.log(`Calling generateContent for ${modelName}`);
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: contents,
+            });
 
-        // If no image is natively returned via parts, we will just return a placeholder or error for MVP 
-        // because the user's specific API behavior for "gemini-3.1-flash-image-preview" might differ.
-        // If it's pure text output, return the text, but the intention is Image generation.
-        if (!outputImageBase64) {
-            console.log("No image returned. Response text:", response.text);
-            return NextResponse.json({ success: true, text: response.text, fallbackImage: true });
-        }
+            // Check if the response returned any inlineData (images)
+            let outputImageBase64 = null;
+            if (response.candidates && response.candidates.length > 0) {
+                const parts = response.candidates[0].content?.parts || [];
+                // Try to find an image part
+                for (const part of parts) {
+                    if (part.inlineData) {
+                        outputImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                        break;
+                    }
+                }
+            }
 
-        return NextResponse.json({ success: true, image: outputImageBase64 });
+            // If no image is natively returned via parts, we will just return a placeholder or error for MVP 
+            // because the user's specific API behavior for "gemini-3.1-flash-image-preview" might differ.
+            // If it's pure text output, return the text, but the intention is Image generation.
+            if (!outputImageBase64) {
+                console.log("No image returned. Response text:", response.text);
+                return NextResponse.json({ success: true, text: response.text, fallbackImage: true });
+            }
+
+            return NextResponse.json({ success: true, image: outputImageBase64 });
+        }
     } catch (e: unknown) {
         console.error("Gemini Error:", e);
         return NextResponse.json({ success: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
